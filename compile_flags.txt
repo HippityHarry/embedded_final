@@ -1,0 +1,4 @@
+-ILibrary/NUC100Series/Include
+-ILibrary/CMSIS/Include 
+-ILibrary/StdDriver/Include 
+-ILibrary/NuMakerLib/Include

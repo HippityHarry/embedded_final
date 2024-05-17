@@ -6,18 +6,25 @@ Question 1: System requirements:
     b. UART0 channel is used to transmit data and receive data. (checked)
     c. Data packet: 1 start bit + 8 data bit + no parity bit + 1 stop bit
 (checked)
-    d. Baud rate: 115200 bps
+    d. Baud rate: 115200 bps (checked)
  * */
 
 #include "NUC100Series.h"
 #include <stdio.h>
 
 // Function declaration
-void system_config(void);
+void system_config();
+void UART02_IRQHandler();
 
 int main(void) {
+  uint32_t data;
+
   system_config();
   while (1) {
+    // wait until RX FIFO is not full
+    while (UART0->FSR & (1 << 15))
+      ;
+    data = UART0->DATA;
     while (UART0->FSR & (1 << 23))
       ; // wait until TX FIFO is not full
     UART0->DATA = 'H';
@@ -92,5 +99,21 @@ void system_config(void) {
   UART0->BAUD &= ~(0xFFFF << 0);
   UART0->BAUD |= 10;
 
+  // UART interrupt
+  UART0->IER |= 1 << 0;
+  NVIC->ISER[0] |= 1 << 12;
+  NVIC->IP[3] &= ~(0b11 << 6);
+
   SYS_LockReg();
+}
+
+void UART02_IRQHandler(void) {
+  volatile uint8_t data;
+
+  if (UART0->ISR & 1 << 0) {
+    data = UART0->RBR;
+    while (UART0->FSR & (1 << 23))
+      ;
+    UART0->DATA = data;
+  }
 }

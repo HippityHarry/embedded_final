@@ -7,7 +7,7 @@ Question 1: System requirements:
     c. Data packet: 1 start bit + 8 data bit + no parity bit + 1 stop bit
 (checked)
     d. Baud rate: 115200 bps (checked)
- * */
+*/
 
 #include "NUC100Series.h"
 #include <stdio.h>
@@ -16,21 +16,7 @@ Question 1: System requirements:
 void system_config();
 void UART02_IRQHandler();
 
-int main(void) {
-  uint32_t data;
-
-  system_config();
-  while (1) {
-    // wait until RX FIFO is not full
-    while (UART0->FSR & (1 << 15))
-      ;
-    data = UART0->DATA;
-    while (UART0->FSR & (1 << 23))
-      ; // wait until TX FIFO is not full
-    UART0->DATA = 'H';
-    CLK_SysTickDelay(200);
-  }
-}
+int main(void) { system_config(); }
 
 void system_config(void) {
   // --- UNLOCK PROTECTED REGISTERS ---
@@ -93,12 +79,10 @@ void system_config(void) {
   UART0->FCR |= (1 << 1);
   // FIFO reset TX field
   UART0->FCR |= (1 << 2);
-
   // UART_CLK/[16*(A+2)] = 22.1184 MHz/[16*(10+2)] = 115200 bps
   UART0->BAUD &= ~(0b11 << 28);
   UART0->BAUD &= ~(0xFFFF << 0);
   UART0->BAUD |= 10;
-
   // UART interrupt
   UART0->IER |= 1 << 0;
   NVIC->ISER[0] |= 1 << 12;
@@ -108,7 +92,8 @@ void system_config(void) {
 }
 
 void UART02_IRQHandler(void) {
-  volatile uint8_t data;
+  // data type of UART0->RBR
+  volatile uint32_t data;
 
   if (UART0->ISR & 1 << 0) {
     data = UART0->RBR;

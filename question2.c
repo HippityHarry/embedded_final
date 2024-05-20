@@ -17,6 +17,7 @@ about what device is this). The configuration for the SPI2:
     - SPI2 pins: GPIOD.0 (SPI2_SS), GPIOD.1 (SPI2_CLK), GPIOD.3 (SPI2_MOSI)
 */
 
+#include "LCD.h"
 #include "NUC100Series.h"
 #include <stdio.h>
 

@@ -16,7 +16,11 @@ Question 1: System requirements:
 void system_config();
 void UART02_IRQHandler();
 
-int main(void) { system_config(); }
+int main(void) {
+  system_config();
+  while (1) {
+  }
+}
 
 void system_config(void) {
   // --- UNLOCK PROTECTED REGISTERS ---

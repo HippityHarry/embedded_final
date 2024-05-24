@@ -4,64 +4,115 @@
 #include "SYS_init.h"
 #include <stdio.h>
 
-void System_Config(void);
-void UART0_Config(void);
+void system_config(void);
+void lcd_config(void);
 
-int main(void) {}
+int main(void) {
+  system_config();
 
-void System_Config(void) {
-  SYS_UnlockReg(); // Unlock protected registers
+  while (1) {
+  }
+}
 
-  CLK->PWRCON |= (1 << 0); // Enable 12MHz clock
-  while (!(CLK->CLKSTATUS & (1 << 0)))
+void system_config(void) {
+  // --- UNLOCK PROTECTED REGISTERS ---
+  SYS_UnlockReg();
+
+  // --- POWER ---
+  // Power on HXT (32.768)
+  CLK->PWRCON |= (1 << 0);
+  while (!(CLK->CLKSTATUS & 1 << 0))
     ;
-
-  CLK->PWRCON |= (1 << 3); // Enable 10Khz clock (for button de-bouncing)
+  // Power on 10kHz
+  CLK->PWRCON |= (1 << 3);
   while (!(CLK->CLKSTATUS & (1 << 3)))
     ;
 
-  // PLL configuration starts
-  CLK->PLLCON &= ~(1 << 19);       // 0: PLL input is HXT
-  CLK->PLLCON &= ~(1 << 16);       // PLL in normal mode
-  CLK->PLLCON &= (~(0x01FF << 0)); // clear
-  CLK->PLLCON |= 48;               // to generate 50MHz clock signal
-  CLK->PLLCON &= ~(1 << 18);       // 0: enable PLLOUT
-  while (!(CLK->CLKSTATUS & (1 << 2)))
-    ; // wait for stabilization
-  // PLL configuration ends
+  // --- PLL ---
+  // PLL input to HXT 12MHz
+  CLK->PLLCON &= ~(1ul << 19);
+  // Enable PLL clock output
+  CLK->PLLCON &= ~(1ul << 18);
+  // PLL in normal mode
+  CLK->PLLCON &= ~(1ul << 16);
+  // Clear feedback
+  CLK->PLLCON &= ~0x01FFul;
+  // Set output to 50 MHz
+  CLK->PLLCON |= 48;
+  while (!(CLK->CLKSTATUS & (1ul << 2)))
+    ;
 
-  // clock source selection
-  CLK->CLKSEL0 &= (~(0x07 << 0)); // clear
-  CLK->CLKSEL0 |= (0b10 << 0);    // select PLL as clock source
-  // clock frequency division
-  CLK->CLKDIV &= (~0x0F << 0); // cleared as not needed
+  // --- CPU CLOCK ---
+  // CPU clock source to PLL
+  CLK->CLKSEL0 &= (~(0b111 << 0));
+  CLK->CLKSEL0 |= (0b010);
+  // Normal mode
+  CLK->PWRCON &= ~(1 << 7);
+  // Frequency divider
+  CLK->CLKDIV &= (~(0xF << 0));
 
-  // UART0 Clock selection and configuration
-  CLK->CLKSEL1 |= (0b11 << 24); // UART0 clock source is 22.1184 MHz
-  CLK->CLKDIV &= ~(0xF << 8);   // clock divider is 1
-  CLK->APBCLK |= (1 << 16);     // enable UART0 clock
+  // --- Debounce ---
+  // Enable
+  PB->DBEN |= (1 << 15);
+  // 10kHz clock source
+  GPIO->DBNCECON |= (1 << 4);
+  // Sampling cycle selection
+  GPIO->DBNCECON |= 8;
 
-  // enable clock of SPI3
+  // --- GPIO ---
+  // PB.15 interrupt
+  PB->PMD &= (~(0b11 << 30));
+  PB->IMD &= (~(1 << 15));
+  // Falling edge trigger
+  PB->IEN |= (1 << 15);
+  NVIC->ISER[0] |= 1 << 3;
+  NVIC->IP[0] &= (~(0b11 << 30));
+
+  // --- UART0 ---
+  // Clock source to 22.1184 Mhz
+  CLK->CLKSEL1 |= (0b11 << 24);
+  // Clock divier to 1
+  CLK->CLKDIV &= ~(0xF << 8);
+  // Enable clock
+  CLK->APBCLK |= (1 << 16);
+  // PB.0 input
+  PB->PMD &= ~(0b11 << 0);
+  // PB.1 output
+  PB->PMD &= ~(0b11 << 2);
+  PB->PMD |= (0b01 << 2);
+  // UART0 RXD to PB.0
+  SYS->GPB_MFP |= (1 << 0);
+  // UART0 TXD to PB.1
+  SYS->GPB_MFP |= (1 << 1);
+  // 8 data bit
+  UART0->LCR |= (0b11 << 0);
+  // No parity bit
+  UART0->LCR &= ~(1 << 3);
+  // 1 stop bit
+  UART0->LCR &= ~(1 << 2);
+  // FIFO trigger level to 1 byte
+  UART0->FCR &= ~(0xF << 16);
+  // FIFO reset RX field
+  UART0->FCR |= (1 << 1);
+  // FIFO reset TX field
+  UART0->FCR |= (1 << 2);
+  // UART_CLK/[16*(A+2)] = 22.1184 MHz/[16*(10+2)] = 115200 bps
+  UART0->BAUD &= ~(0b11 << 28);
+  UART0->BAUD &= ~(0xFFFF << 0);
+  UART0->BAUD |= 10;
+  // UART interrupt
+  UART0->IER |= 1 << 0;
+  NVIC->ISER[0] |= 1 << 12;
+  NVIC->IP[3] &= ~(0b11 << 6);
+
+  // --- SPI3 ---
+  // Enable clock
   CLK->APBCLK |= 1 << 15;
-
   // Output pin mode for buzzer
-  PB->PMD &= (~(0x03 << 22)); // clear
+  PB->PMD &= (~(0x03 << 22));
   PB->PMD |= (0b01 << 22);
 
-  // GPIO Interrupt configuration. GPIO-B15 is the interrupt source
-  PB->PMD &= (~(0b11 << 30)); // Input mode
-  PB->IMD &= (~(1 << 15));    // Edge trigger interrupt
-  PB->IEN |= (1 << 15);       // Enable interrupt (falling edge trigger)
-
-  PB->DBEN |= (1 << 15);      // Enable de-bounce function
-  GPIO->DBNCECON |= (1 << 4); // Clock source is 10 kHz clock
-  GPIO->DBNCECON |= 8;        // Sampling cycle selection
-
-  // NVIC interrupt configuration for GPIO-B15 interrupt source
-  NVIC->ISER[0] |= 1 << 3;
-  NVIC->IP[0] &= (~(3 << 30));
-
-  // 7 segments
+  // --- 7 segments ---
   // Set mode for PC4 to PC7
   PC->PMD &= (~(0xFF << 8));    // clear PMD[15:8]
   PC->PMD |= (0b01010101 << 8); // Set output push-pull for PC4 to PC7
@@ -73,36 +124,19 @@ void System_Config(void) {
   SYS_LockReg(); // Lock protected registers
 }
 
-void UART0_Config(void) {
-  // UART0 pin configuration.
-  // PB.1 pin is for UART0 TX (data transmission)
-  PB->PMD &= ~(0b11 << 2);  // clear
-  PB->PMD |= (0b01 << 2);   // PB.1 is output pin
-  SYS->GPB_MFP |= (1 << 1); // GPB_MFP[1] = 1 -> PB.1 is UART0 TX pin
-
-  // PB.0 pin is for UART0 RX (data reception)
-  PB->PMD &= ~(0b11 << 0);  // Set PB.0 as input pin
-  PB->IMD &= ~(1 << 0);     // Edge trigger interrupt
-  PB->IEN |= (1 << 0);      // Enable interrupt (falling edge trigger)
-  SYS->GPB_MFP |= (1 << 0); // GPB_MFP[0] = 1 -> PB.0 is UART0 RX pin
-
-  // UART0 operation configuration
-  UART0->LCR |= (0b11 << 0);  // 8 data bit
-  UART0->LCR &= ~(1 << 2);    // one stop bit
-  UART0->LCR &= ~(1 << 3);    // no parity bit
-  UART0->FCR |= (1 << 1);     // clear RX FIFO
-  UART0->FCR |= (1 << 2);     // clear TX FIFO
-  UART0->FCR &= ~(0xF << 16); // FIFO Trigger Level is 1 byte]
-
-  // Baud rate config
-  UART0->BAUD &= ~(0b11 << 28);  // Clear to set mode 0
-  UART0->BAUD &= ~(0xFFFF << 0); // clear
-  UART0->BAUD |= 10;             // A = 10
-                     //--> Mode 0, Baud rate = UART_CLK/[16*(A+2)] = 22.1184
-                     // MHz/[16*(10+2)]= 115200 bps
-
-  // set up UART interrupt and interrupt priority
-  UART0->IER |= 1 << 0;
-  NVIC->ISER[0] |= 1 << 12;
-  NVIC->IP[3] &= ~(0b11 << 6);
+void lcd_config(void) {
+  // --- LCD ---
+  // System reset
+  lcdWriteCommand(0xE2);
+  // 100 fps framerate
+  lcdWriteCommand(0xA1);
+  // Bias ratio to 9
+  lcdWriteCommand(0xEB);
+  // V_Bias potentiometer (A0 -> 160)
+  lcdWriteCommand(0x81);
+  lcdWriteCommand(0xA0);
+  // Mapping to X=0, Y=0
+  lcdWriteCommand(0xC0);
+  // Enable display
+  lcdWriteCommand(0xAF);
 }

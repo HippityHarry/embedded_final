@@ -5,6 +5,14 @@
 #define FG_COLOR 0xFFFF
 #define BG_COLOR 0x0000
 
+void lcdWriteCommand(unsigned char temp);
+
+// Wrtie data to LCD
+void lcdWriteData(uint8_t temp);
+
+// Set Address to LCD
+void lcdSetAddr(uint8_t PageAddr, uint8_t ColumnAddr);
+
 extern void init_LCD(void);
 
 extern void clear_LCD(void);

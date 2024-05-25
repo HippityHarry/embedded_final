@@ -17,15 +17,16 @@ about what device is this). The configuration for the SPI2:
     - SPI2 pins: GPIOD.0 (SPI2_SS), GPIOD.1 (SPI2_CLK), GPIOD.3 (SPI2_MOSI)
 */
 
-#include "LCD.h"
 #include "NUC100Series.h"
 #include <stdio.h>
+#include "LCD.h"
 
 #define HXT_STATUS 1 << 0
 #define PLL_STATUS 1 << 2
 
 void System_Config(void);
 void SPI2_Config(void);
+void SPI2_Transmit(char);
 void SPI3_Config(void);
 void SPI2_loadChar(char);
 void ADC7_Config(void);
@@ -65,9 +66,20 @@ int main(void) {
     printS_5x7(4 + 5 * 10, 40, adc7_val_s);
 
     if (adc7_val > 2510) {
-      printS_5x7(2, 48, "123");
-      CLK_SysTickDelay(10);
-      CLK_SysTickDelay(10);
+      printS_5x7(2, 48, "Team2");
+			SPI2_Transmit('T');
+			CLK_SysTickDelay(10);
+
+			SPI2_Transmit('E');
+			CLK_SysTickDelay(10);
+			
+			SPI2_Transmit('A');
+			CLK_SysTickDelay(10);
+			
+			SPI2_Transmit('M');
+			CLK_SysTickDelay(10);
+			
+			SPI2_Transmit('2');
     } else {
       printS_5x7(2, 48, "   ");
     }
@@ -175,11 +187,11 @@ void SPI2_Config(void) {
   // one transmit/receive word will be executed in one data transfer
 
   SPI2->CNTRL &= ~(31 << 3); // Transmit/Receive bit length
-  SPI2->CNTRL |= 8 << 3;
+  SPI2->CNTRL |= 9 << 3;
   // One BYTE (8 bits) transmitted/received per data transfer
 
-  SPI2->CNTRL &= ~(1 << 2); // Transmit at rising edge of SPI CLK
-  SPI2->DIVIDER = 0;
+  SPI2->CNTRL &= ~(1ul << 2); // Transmit at rising edge of SPI CLK
+  SPI2->DIVIDER = 24;
   // SPI clock divider. SPI clock = HCLK / ((DIVIDER+1)*2). HCLK = 50 MHz
 }
 
@@ -218,4 +230,12 @@ void ADC7_Config(void) {
   ADC->ADCR |= (0x01 << 0);    // ADC is enabled
   ADC->ADCHER &= ~(0b11 << 8); // ADC7 input source is external pin
   ADC->ADCHER |= (1 << 7);     // ADC channel 7 is enabled.
+}
+
+void SPI2_Transmit(char data) {
+	SPI2->SSR |= 1 << 0;   // Load the data 
+  SPI2->TX[0] = data;
+  SPI2->CNTRL |= (1 << 0);   // Start transmission
+  while(SPI2->CNTRL & (1 << 0));   // Wait for the complete
+	SPI2->SSR &= ~(1 << 0);
 }

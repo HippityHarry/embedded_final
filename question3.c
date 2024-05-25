@@ -4,9 +4,17 @@
 #include "SYS_init.h"
 #include <stdio.h>
 
+#define U11 0b1000 //7-segments
+#define U12 0b0100
+#define U13 0b0010
+#define U14 0b0001
+
 void system_config(void);
 void lcd_config(void);
 void UART02_IRQHandler(void);
+
+static void drawMap(void);
+
 
 enum GameStatus { WAITING, LOADED };
 
@@ -14,6 +22,25 @@ volatile enum GameStatus status = WAITING;
 volatile uint32_t map_x = 0;
 volatile uint32_t map_y = 0;
 volatile uint32_t map_data[8][8];
+
+int shotCount[] = {0,0};
+int hit = 0;
+int maxHit = 10;
+int pattern[] = {
+               //   gedbaf_dot_c
+                  0b10000010,  //Number 0          // ---a----
+                  0b11101110,  //Number 1          // |      |
+                  0b00000111,  //Number 2          // f      b
+                  0b01000110,  //Number 3          // |      |
+                  0b01101010,  //Number 4          // ---g----
+                  0b01010010,  //Number 5          // |      |
+                  0b00010010,  //Number 6          // e      c
+                  0b11100110,  //Number 7          // |      |
+                  0b00000010,  //Number 8          // ---d----
+                  0b01000010,   //Number 9
+                  0b11111111   //Blank LED 
+                }; 
+
 
 int main(void) {
   system_config();
@@ -167,6 +194,57 @@ void system_config(void) {
   PE->PMD &= (~(0xFFFF << 0));        // clear PMD[15:0]
   PE->PMD |= 0b0101010101010101 << 0; // Set output push-pull for PE0 to PE7
 
+  //-----Timer 1 configuration-------
+	CLK->CLKSEL1 &= ~(0b111 << 12);//12MHz
+	CLK->APBCLK |= (1 << 3); //Enable clock source
+
+  //prescaler = 0
+	TIMER1->TCSR &= ~(0xFF << 0);
+	
+	//reset Timer 1
+	TIMER1->TCSR |= (1 << 26);
+	
+	//periodic mode
+	TIMER1->TCSR &= ~(0b11 << 27);
+	TIMER1->TCSR |= (0b01 << 27); //periodic mode
+	TIMER1->TCSR &= ~(1 << 24);
+	
+	//TDR to be updated continuously while timer counter is counting
+	TIMER1->TCSR |= (1 << 16);
+	
+	//TImer interrupt
+	//Trigger compare match flag
+	TIMER1->TCSR |= (1 << 29);
+	NVIC->ISER[0] |= 1<<9; 
+	NVIC->IP[2] &= ~(0b11<<14); 
+	
+	TIMER1->TCMPR = 1200-1; // 0.0001/(1/12MHz)
+
+  //--------------Timer 0 configuration-------------------------
+	CLK->CLKSEL1 &= ~(0b111 << 12);//12MHz
+	CLK->APBCLK |= (1 << 2); //Enable clock source
+
+	TIMER0->TCSR &= ~(0xFF << 0);//prescaler = 0
+	
+	//reset Timer 0
+	TIMER0->TCSR |= (1 << 26);
+	
+	//define Timer 0 operation mode
+	TIMER0->TCSR &= ~(0b11 << 27);
+	TIMER0->TCSR |= (0b01 << 27); //periodic mode
+	TIMER0->TCSR &= ~(1 << 24);
+	
+	//TDR to be updated continuously while timer counter is counting
+	TIMER0->TCSR |= (1 << 16);
+	
+	//Timer interrupt
+	//Trigger compare match flag
+	TIMER0->TCSR |= (1 << 29);
+	NVIC->ISER[0] |= 1<<8; //Timer 0 is given number 8 in the vecter table (section 5.2.7)
+	NVIC->IP[2] &= ~(0b11<<6); //Set priority level
+	
+	TIMER0->TCMPR = 12000000-1; // 1/(1/12MHz)
+
   SYS_LockReg(); // Lock protected registers
 }
 
@@ -214,3 +292,72 @@ void UART02_IRQHandler(void) {
   }
 }
 
+void TMR0_IRQHandler(void) {
+	if (hit < maxHit) {
+    for (int i = 0; i < 3; i++){
+		PC->DOUT ^= (1<<12); //Toggle gpc123 times for a hit
+    }
+	} else if (hit == maxHit || (shotCount[0] == 1 && shotCount[1] == 6)) {
+    for (int i = 0; i < 5; i++){
+		PB->DOUT ^= (1<<11); //Toggle buzzer to indicate end of game
+    }
+	} else {
+		TIMER0->TCSR &= ~(1 << 30);; //turn off timer 0
+	}
+	TIMER0->TISR |= (1<<0); 
+}
+
+void TMR1_IRQHandler(void)
+{
+	show7Segment(U13, shotCount[0]);
+  show7Segment(U14, shotCount[1]);
+	TIMER1->TISR |= (1<<0); 
+}
+
+static void drawMap(void) {
+	clear_LCD(); 
+	int16_t x = 0;
+	int16_t y = 0;
+	for (int i = 0; i<8;i++) {
+		for(int j = 0; j<8;j++) {
+			if (map_data[i][j] == 2) {
+				printS_5x7(x, y, "x");
+			} else {
+				printS_5x7(x, y, "-");
+			}
+			x+=10;
+		}
+		y+=8;
+		x=0;
+	}
+}
+
+static void shoot(void) {
+	handleShotCount();
+  hitCheck();
+  TIMER1->TCSR |= (1 << 30);//turn on timer 1
+}
+
+static void handleShotCount(void) { //handle 7-segment display
+	shotCount[1]++;
+	if(shotCount[1] == 10) {
+		shotCount[0]++;
+		shotCount[1] = 0;
+	}
+}
+
+static void hitCheck(void) {
+	if (map_data[map_x][map_y] == 1) {
+		map_data[map_x][map_y] = 2;
+		hit++;
+    TIMER0->TCSR |= (1 << 30); //start timer 0
+	}
+}
+
+static void show7Segment(int ledNo, int number) {
+	// Control which segment to turn on
+	PC->DOUT &= ~(0xF<<4);
+	PC->DOUT |= ledNo<<4;
+
+	PE->DOUT = pattern[number];
+}

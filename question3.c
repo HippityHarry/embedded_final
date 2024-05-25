@@ -57,11 +57,7 @@ int main(void) {
 
     if (status == LOADED) {
       clear_LCD();
-      for (int16_t x = 0; x < 8; x++) {
-        for (int16_t y = 0; y < 8; y++) {
-          printC_5x7(x * 6, y * 8, map_data[x][y]);
-        }
-      }
+      drawmap();
 
       continue;
     }

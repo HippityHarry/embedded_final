@@ -6,11 +6,38 @@
 
 void system_config(void);
 void lcd_config(void);
+void UART02_IRQHandler(void);
+
+enum GameStatus { WAITING, LOADED };
+
+volatile enum GameStatus status = WAITING;
+volatile uint32_t map_x = 0;
+volatile uint32_t map_y = 0;
+volatile uint32_t map_data[8][8];
 
 int main(void) {
   system_config();
+  lcd_config();
 
   while (1) {
+    if (status == WAITING) {
+      clear_LCD();
+      printS_5x7(21, 32, "RMIT Battleship~");
+      printS_5x7(18, 48, "Waiting for map...");
+
+      continue;
+    }
+
+    if (status == LOADED) {
+      clear_LCD();
+      for (int16_t x = 0; x < 8; x++) {
+        for (int16_t y = 0; y < 8; y++) {
+          printC_5x7(x * 6, y * 8, map_data[x][y]);
+        }
+      }
+
+      continue;
+    }
   }
 }
 
@@ -111,6 +138,25 @@ void system_config(void) {
   // Output pin mode for buzzer
   PB->PMD &= (~(0x03 << 22));
   PB->PMD |= (0b01 << 22);
+  SYS->GPD_MFP |= 1 << 11; // 1: PD11 is configured for alternative function
+  SYS->GPD_MFP |= 1 << 9;  // 1: PD9 is configured for alternative function
+  SYS->GPD_MFP |= 1 << 8;  // 1: PD8 is configured for alternative function
+
+  SPI3->CNTRL &= ~(1 << 23); // 0: disable variable clock feature
+  SPI3->CNTRL &= ~(1 << 22); // 0: disable two bits transfer mode
+  SPI3->CNTRL &= ~(1 << 18); // 0: select Master mode
+  SPI3->CNTRL &= ~(1 << 17); // 0: disable SPI interrupt
+  SPI3->CNTRL |= 1 << 11;    // 1: SPI clock idle high
+  SPI3->CNTRL &= ~(1 << 10); // 0: MSB is sent first
+  SPI3->CNTRL &= ~(3 << 8); // 00: one transmit/receive word will be executed in
+                            // one data transfer
+
+  SPI3->CNTRL &= ~(31 << 3); // Transmit/Receive bit length
+  SPI3->CNTRL |= 9 << 3;     // 9: 9 bits transmitted/received per data transfer
+
+  SPI3->CNTRL |= (1 << 2); // 1: Transmit at negative edge of SPI CLK
+  SPI3->DIVIDER =
+      0; // SPI clock divider. SPI clock = HCLK / ((DIVIDER+1)*2). HCLK = 50 MHz
 
   // --- 7 segments ---
   // Set mode for PC4 to PC7
@@ -140,3 +186,31 @@ void lcd_config(void) {
   // Enable display
   lcdWriteCommand(0xAF);
 }
+
+void UART02_IRQHandler(void) {
+  if ((map_x == 0 && map_y == 0) && (UART0->ISR & 1 << 0)) {
+    map_data[map_x][map_y] = UART0->RBR;
+    while (UART0->FSR & (1 << 23))
+      ;
+    UART0->DATA = map_x;
+    while (UART0->FSR & (1 << 23))
+      ;
+    UART0->DATA = map_x;
+    while (UART0->FSR & (1 << 23))
+      ;
+    UART0->DATA = map_data[map_x][map_y];
+
+    map_x++;
+    if (map_x > 8) {
+      map_x = 0;
+      map_y++;
+    }
+    if (map_y == 8) {
+      status = LOADED;
+      // reset map loader
+      map_x = 0;
+      map_y = 0;
+    }
+  }
+}
+

@@ -307,14 +307,14 @@ void TMR0_IRQHandler(void) {
 	TIMER0->TISR |= (1<<0); 
 }
 
-void TMR1_IRQHandler(void)
+void TMR1_IRQHandler(void) //display 7 segment
 {
 	show7Segment(U13, shotCount[0]);
   show7Segment(U14, shotCount[1]);
 	TIMER1->TISR |= (1<<0); 
 }
 
-static void drawMap(void) {
+static void drawMap(void) { //draw map
 	clear_LCD(); 
 	int16_t x = 0;
 	int16_t y = 0;
@@ -346,7 +346,7 @@ static void handleShotCount(void) { //handle 7-segment display
 	}
 }
 
-static void hitCheck(void) {
+static void hitCheck(void) { //check whether player hit a ship or not
 	if (map_data[map_x][map_y] == 1) {
 		map_data[map_x][map_y] = 2;
 		hit++;
@@ -354,8 +354,8 @@ static void hitCheck(void) {
 	}
 }
 
-static void show7Segment(int ledNo, int number) {
-	// Control which segment to turn on
+static void show7Segment(int ledNo, int number) { // Control which segment to turn on
+
 	PC->DOUT &= ~(0xF<<4);
 	PC->DOUT |= ledNo<<4;
 
